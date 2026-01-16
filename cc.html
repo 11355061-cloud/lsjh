@@ -1,0 +1,794 @@
+<!doctype html>
+<html lang="zh-TW" class="h-full">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>詞彙配對遊戲</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/_sdk/element_sdk.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&amp;display=swap" rel="stylesheet">
+  <style>
+    body {
+      box-sizing: border-box;
+    }
+    * {
+      font-family: 'Nunito', sans-serif;
+    }
+    
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
+      50% { box-shadow: 0 0 20px 10px rgba(99, 102, 241, 0.2); }
+    }
+    
+    @keyframes celebrate {
+      0% { transform: scale(1); }
+      25% { transform: scale(1.1) rotate(-3deg); }
+      50% { transform: scale(1.15) rotate(3deg); }
+      75% { transform: scale(1.1) rotate(-3deg); }
+      100% { transform: scale(1); }
+    }
+    
+    @keyframes confetti-fall {
+      0% { transform: translateY(-100%) rotate(0deg); opacity: 1; }
+      100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+    }
+    
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-5px); }
+      40%, 80% { transform: translateX(5px); }
+    }
+    
+    @keyframes float-in {
+      0% { opacity: 0; transform: translateY(20px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+    
+    @keyframes hint-pulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.7); }
+      50% { transform: scale(1.05); box-shadow: 0 0 20px 10px rgba(251, 191, 36, 0.3); }
+    }
+    
+    .card-selected {
+      animation: pulse-glow 1.5s infinite;
+    }
+    
+    .card-matched {
+      animation: celebrate 0.6s ease-out;
+    }
+    
+    .card-wrong {
+      animation: shake 0.5s ease-out;
+    }
+    
+    .card-hint {
+      animation: hint-pulse 1s infinite;
+    }
+    
+    .float-in {
+      animation: float-in 0.5s ease-out forwards;
+    }
+    
+    .confetti {
+      position: fixed;
+      width: 10px;
+      height: 10px;
+      animation: confetti-fall 3s linear forwards;
+      pointer-events: none;
+      z-index: 1000;
+    }
+    
+    .connection-line {
+      pointer-events: none;
+      position: absolute;
+      z-index: 5;
+    }
+  </style>
+  <style>@view-transition { navigation: auto; }</style>
+  <script src="/_sdk/data_sdk.js" type="text/javascript"></script>
+ </head>
+ <body class="h-full">
+  <div id="app" class="h-full w-full bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 overflow-auto">
+   <div class="min-h-full p-4 md:p-8"><!-- Header -->
+    <header class="text-center mb-6 md:mb-8">
+     <h1 id="game-title" class="text-3xl md:text-4xl font-extrabold text-white mb-2 drop-shadow-lg">⛰️ 登山知識配對挑戰</h1>
+     <p class="text-purple-200 text-sm md:text-base">按住並拖曳左邊的詞彙到右邊的定義來配對</p>
+    </header><!-- Score & Progress -->
+    <div class="flex justify-center gap-4 md:gap-8 mb-6">
+     <div class="bg-white/10 backdrop-blur-sm rounded-2xl px-4 py-2 md:px-6 md:py-3"><span class="text-purple-200 text-sm">得分</span>
+      <p id="score" class="text-2xl md:text-3xl font-bold text-yellow-400">0</p>
+     </div>
+     <div class="bg-white/10 backdrop-blur-sm rounded-2xl px-4 py-2 md:px-6 md:py-3"><span class="text-purple-200 text-sm">配對進度</span>
+      <p id="progress" class="text-2xl md:text-3xl font-bold text-green-400">0/6</p>
+     </div>
+     <div class="bg-white/10 backdrop-blur-sm rounded-2xl px-4 py-2 md:px-6 md:py-3"><span class="text-purple-200 text-sm">連續正確</span>
+      <p id="streak" class="text-2xl md:text-3xl font-bold text-pink-400">0</p>
+     </div>
+    </div><!-- Hint Message -->
+    <div id="hint-message" class="hidden text-center mb-4">
+     <div class="inline-block bg-yellow-400/20 backdrop-blur-sm rounded-xl px-4 py-2 border-2 border-yellow-400/50"><span class="text-yellow-300 font-semibold" id="hint-text"></span>
+     </div>
+    </div><!-- Game Board -->
+    <div class="relative max-w-4xl mx-auto" id="game-container">
+     <svg id="connection-svg" class="connection-line w-full h-full" style="position: absolute; top: 0; left: 0;"></svg>
+     <div class="grid grid-cols-2 gap-4 md:gap-8"><!-- Terms Column -->
+      <div id="terms-column" class="space-y-3 md:space-y-4">
+      </div><!-- Definitions Column -->
+      <div id="definitions-column" class="space-y-3 md:space-y-4">
+      </div>
+     </div>
+    </div><!-- Controls -->
+    <div class="flex justify-center gap-4 mt-8"><button id="hint-btn" class="bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-500 hover:to-orange-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center gap-2"> <span>💡</span> <span id="hint-btn-text">提示</span> <span id="hints-remaining" class="bg-white/30 rounded-full px-2 py-0.5 text-sm">3</span> </button> <button id="restart-btn" class="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center gap-2"> <span>🔄</span> <span id="restart-btn-text">重新開始</span> </button>
+    </div><!-- Completion Modal -->
+    <div id="completion-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+     <div class="bg-gradient-to-br from-purple-600 to-pink-600 rounded-3xl p-8 text-center max-w-md w-full shadow-2xl">
+      <div class="text-6xl mb-4">
+       🎉
+      </div>
+      <h2 class="text-3xl font-extrabold text-white mb-2">太棒了！</h2>
+      <p class="text-purple-200 mb-4">你成功配對了所有詞彙！</p>
+      <div class="bg-white/20 rounded-2xl p-4 mb-6">
+       <p class="text-white">最終得分</p>
+       <p id="final-score" class="text-5xl font-extrabold text-yellow-400">0</p>
+      </div><button id="play-again-btn" class="bg-white text-purple-600 font-bold py-3 px-8 rounded-xl hover:bg-purple-100 transition-all duration-200 transform hover:scale-105"> 再玩一次 🚀 </button>
+     </div>
+    </div>
+   </div>
+  </div>
+  <script>
+    // Game Data - 50 題登山知識
+    const allVocabularyData = [
+      { id: 1, term: "高山症", definition: "在高海拔地區因氧氣不足而產生的身體不適症狀", hint: "爬得太高太快時容易發生" },
+      { id: 2, term: "三角點", definition: "標示山頂或測量點位置的石製測量標記", hint: "登頂時常會看到的石碑" },
+      { id: 3, term: "等高線", definition: "地圖上連接相同海拔高度各點的曲線", hint: "越密集代表坡度越陡" },
+      { id: 4, term: "行動糧", definition: "登山途中補充體力的高熱量食物", hint: "巧克力和堅果就是常見的這個" },
+      { id: 5, term: "攻頂", definition: "成功登上山峰的最高點", hint: "登山者的最終目標" },
+      { id: 6, term: "稜線", definition: "山脊或山峰頂部連接的線條或路徑", hint: "走在山的背脊上" },
+      { id: 7, term: "基地營", definition: "登山活動中作為休息和補給的營地", hint: "攀登高峰前的中繼站" },
+      { id: 8, term: "冰爪", definition: "綁在登山鞋底用於雪地行走的金屬齒狀裝備", hint: "雪地上的防滑裝備" },
+      { id: 9, term: "確保", definition: "使用繩索和裝備保護攀登者安全的技術", hint: "攀岩時的安全措施" },
+      { id: 10, term: "垂降", definition: "使用繩索從高處下降的技術", hint: "往下走比往上爬更需要這個技術" },
+      { id: 11, term: "縱走", definition: "沿著山脈稜線連續攀登多座山峰", hint: "一次爬好幾座山" },
+      { id: 12, term: "背工", definition: "協助登山者背負裝備和物資的專業人員", hint: "幫忙扛重物的專業人員" },
+      { id: 13, term: "山屋", definition: "設置在山區供登山者休息過夜的簡易建築", hint: "山上的住宿點" },
+      { id: 14, term: "雪盲", definition: "因雪地強光反射造成的眼睛傷害", hint: "雪地太亮造成的眼疾" },
+      { id: 15, term: "失溫", definition: "體溫下降至危險程度的狀況", hint: "天氣太冷導致的危險狀況" },
+      { id: 16, term: "架繩", definition: "在危險路段架設繩索以利通行", hint: "幫大家拉上固定的繩子" },
+      { id: 17, term: "登山杖", definition: "協助行走和維持平衡的手持裝備", hint: "像拐杖一樣的登山工具" },
+      { id: 18, term: "水袋", definition: "方便在行進中補充水分的軟式儲水裝備", hint: "不用停下來就能喝水的裝備" },
+      { id: 19, term: "頭燈", definition: "戴在頭上的照明工具", hint: "黑暗中解放雙手的燈具" },
+      { id: 20, term: "鳥嘴", definition: "山峰尖銳突出的岩石地形", hint: "形狀像鳥嘴的岩石" },
+      { id: 21, term: "箭竹", definition: "高山地區常見的竹類植物", hint: "台灣山區常見的植物" },
+      { id: 22, term: "樹限", definition: "樹木能夠生長的最高海拔界線", hint: "再高就沒有樹木了" },
+      { id: 23, term: "風切", definition: "強風吹過稜線或山峰的現象", hint: "稜線上的強風" },
+      { id: 24, term: "好天", definition: "適合登山的晴朗天氣", hint: "登山最喜歡的天氣" },
+      { id: 25, term: "午後雷陣雨", definition: "山區下午常出現的雷雨天氣", hint: "夏天下午山上的常見現象" },
+      { id: 26, term: "雲海", definition: "從高處俯瞰雲層形成的景觀", hint: "像海洋一樣的雲層" },
+      { id: 27, term: "日出", definition: "太陽升起的時刻和景象", hint: "早起登山的獎勵" },
+      { id: 28, term: "結繩", definition: "綁繩索的各種技術和方法", hint: "繩子的打結技巧" },
+      { id: 29, term: "扁帶", definition: "扁平狀的攀登用繩帶", hint: "扁的不是圓的繩子" },
+      { id: 30, term: "快扣", definition: "用於連接繩索和固定點的金屬扣環", hint: "快速連接用的金屬扣" },
+      { id: 31, term: "岩釘", definition: "打入岩壁作為固定點的金屬釘", hint: "釘進石頭的固定裝置" },
+      { id: 32, term: "溯溪", definition: "沿著溪流向上游前進的活動", hint: "在溪谷中逆流而上" },
+      { id: 33, term: "崩壁", definition: "陡峭易崩塌的山壁地形", hint: "很容易崩落的危險地形" },
+      { id: 34, term: "碎石坡", definition: "佈滿碎石的斜坡地形", hint: "容易滑倒的石頭斜坡" },
+      { id: 35, term: "獨攀", definition: "一個人單獨登山", hint: "沒有夥伴的登山方式" },
+      { id: 36, term: "輕量化", definition: "減輕背包重量的登山哲學", hint: "裝備越輕越好的概念" },
+      { id: 37, term: "留守", definition: "記錄登山者行程並負責聯繫的人員", hint: "在山下等待的聯絡人" },
+      { id: 38, term: "入山證", definition: "進入管制山區所需的許可文件", hint: "進山前要申請的證明" },
+      { id: 39, term: "山難", definition: "登山過程中發生的意外事故", hint: "山上發生的緊急狀況" },
+      { id: 40, term: "撤退", definition: "因天候或體力等因素放棄攻頂下山", hint: "安全第一，放棄登頂" },
+      { id: 41, term: "高度計", definition: "測量海拔高度的儀器", hint: "顯示你在多高的裝置" },
+      { id: 42, term: "指北針", definition: "指示北方方向的導航工具", hint: "找方向的基本工具" },
+      { id: 43, term: "GPS", definition: "全球衛星定位系統", hint: "用衛星定位的電子設備" },
+      { id: 44, term: "離線地圖", definition: "不需網路即可使用的電子地圖", hint: "沒訊號也能看的地圖" },
+      { id: 45, term: "紮營", definition: "搭設帳篷準備過夜", hint: "在野外搭帳篷睡覺" },
+      { id: 46, term: "炊煮", definition: "在山上準備食物的行為", hint: "在營地煮飯" },
+      { id: 47, term: "淨山", definition: "清理山區垃圾維護環境", hint: "把山上的垃圾帶下山" },
+      { id: 48, term: "無痕山林", definition: "不留下任何痕跡的登山理念", hint: "保護環境的登山態度" },
+      { id: 49, term: "山友", definition: "共同登山的夥伴", hint: "一起爬山的朋友" },
+      { id: 50, term: "登頂照", definition: "在山頂拍攝的紀念照片", hint: "攻頂成功的證明照" }
+    ];
+
+    let vocabularyData = [];
+
+    // Default Config
+    const defaultConfig = {
+      game_title: "⛰️ 登山知識配對挑戰",
+      hint_button_text: "提示",
+      restart_button_text: "重新開始",
+      background_color: "#312e81",
+      card_color: "#ffffff",
+      text_color: "#1f2937",
+      accent_color: "#8b5cf6",
+      success_color: "#10b981",
+      font_family: "Nunito"
+    };
+
+    // Game State
+    let gameState = {
+      score: 0,
+      matchedPairs: 0,
+      streak: 0,
+      hintsRemaining: 3,
+      selectedTerm: null,
+      selectedDefinition: null,
+      matchedIds: [],
+      shuffledTerms: [],
+      shuffledDefinitions: [],
+      isDragging: false,
+      dragStartId: null,
+      dragStartType: null,
+      currentLine: null
+    };
+
+    // Shuffle array
+    function shuffleArray(array) {
+      const shuffled = [...array];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      return shuffled;
+    }
+
+    // Select random questions from pool
+    function selectRandomQuestions(count = 6) {
+      const shuffled = shuffleArray(allVocabularyData);
+      return shuffled.slice(0, count);
+    }
+
+    // Create confetti
+    function createConfetti() {
+      const colors = ['#f43f5e', '#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ec4899'];
+      for (let i = 0; i < 50; i++) {
+        const confetti = document.createElement('div');
+        confetti.className = 'confetti';
+        confetti.style.left = Math.random() * 100 + 'vw';
+        confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+        confetti.style.animationDelay = Math.random() * 2 + 's';
+        confetti.style.borderRadius = Math.random() > 0.5 ? '50%' : '0';
+        document.body.appendChild(confetti);
+        setTimeout(() => confetti.remove(), 3000);
+      }
+    }
+
+    // Create mini celebration
+    function miniCelebration(element) {
+      const emojis = ['⭐', '✨', '💫', '🌟'];
+      for (let i = 0; i < 5; i++) {
+        const particle = document.createElement('div');
+        particle.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+        particle.className = 'fixed text-2xl pointer-events-none';
+        particle.style.zIndex = '1000';
+        const rect = element.getBoundingClientRect();
+        particle.style.left = rect.left + rect.width / 2 + 'px';
+        particle.style.top = rect.top + rect.height / 2 + 'px';
+        particle.style.transition = 'all 1s ease-out';
+        document.body.appendChild(particle);
+        
+        setTimeout(() => {
+          particle.style.transform = `translate(${(Math.random() - 0.5) * 100}px, ${-100 - Math.random() * 50}px)`;
+          particle.style.opacity = '0';
+        }, 50);
+        
+        setTimeout(() => particle.remove(), 1000);
+      }
+    }
+
+    // Draw connection line
+    function drawConnection(termId, defId, color = '#8b5cf6') {
+      const svg = document.getElementById('connection-svg');
+      const container = document.getElementById('game-container');
+      const termCard = document.querySelector(`[data-term-id="${termId}"]`);
+      const defCard = document.querySelector(`[data-def-id="${defId}"]`);
+      
+      if (!termCard || !defCard) return;
+      
+      const containerRect = container.getBoundingClientRect();
+      const termRect = termCard.getBoundingClientRect();
+      const defRect = defCard.getBoundingClientRect();
+      
+      const x1 = termRect.right - containerRect.left;
+      const y1 = termRect.top + termRect.height / 2 - containerRect.top;
+      const x2 = defRect.left - containerRect.left;
+      const y2 = defRect.top + defRect.height / 2 - containerRect.top;
+      
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', x1);
+      line.setAttribute('y1', y1);
+      line.setAttribute('x2', x2);
+      line.setAttribute('y2', y2);
+      line.setAttribute('stroke', color);
+      line.setAttribute('stroke-width', '3');
+      line.setAttribute('stroke-linecap', 'round');
+      line.setAttribute('data-connection', `${termId}-${defId}`);
+      line.style.opacity = '0.7';
+      
+      svg.appendChild(line);
+    }
+
+
+
+    // Initialize game
+    function initGame() {
+      // Select 6 random questions from the pool of 50
+      vocabularyData = selectRandomQuestions(6);
+      
+      gameState = {
+        score: 0,
+        matchedPairs: 0,
+        streak: 0,
+        hintsRemaining: 3,
+        selectedTerm: null,
+        selectedDefinition: null,
+        matchedIds: [],
+        shuffledTerms: shuffleArray(vocabularyData),
+        shuffledDefinitions: shuffleArray(vocabularyData),
+        isDragging: false,
+        dragStartId: null,
+        dragStartType: null,
+        currentLine: null
+      };
+      
+      document.getElementById('connection-svg').innerHTML = '';
+      updateUI();
+      renderCards();
+    }
+    
+    // Get card center position
+    function getCardCenter(element) {
+      const rect = element.getBoundingClientRect();
+      const container = document.getElementById('game-container');
+      const containerRect = container.getBoundingClientRect();
+      
+      return {
+        x: rect.left + rect.width / 2 - containerRect.left,
+        y: rect.top + rect.height / 2 - containerRect.top
+      };
+    }
+    
+    // Draw temporary line during drag
+    function drawTempLine(x1, y1, x2, y2) {
+      const svg = document.getElementById('connection-svg');
+      
+      // Remove existing temp line
+      const existingTemp = svg.querySelector('line[data-temp="true"]');
+      if (existingTemp) {
+        existingTemp.remove();
+      }
+      
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', x1);
+      line.setAttribute('y1', y1);
+      line.setAttribute('x2', x2);
+      line.setAttribute('y2', y2);
+      line.setAttribute('stroke', '#a78bfa');
+      line.setAttribute('stroke-width', '3');
+      line.setAttribute('stroke-linecap', 'round');
+      line.setAttribute('stroke-dasharray', '5,5');
+      line.setAttribute('data-temp', 'true');
+      line.style.opacity = '0.7';
+      
+      svg.appendChild(line);
+    }
+    
+    // Remove temporary line
+    function removeTempLine() {
+      const svg = document.getElementById('connection-svg');
+      const tempLine = svg.querySelector('line[data-temp="true"]');
+      if (tempLine) {
+        tempLine.remove();
+      }
+    }
+    
+    // Start drag from card
+    function startDrag(id, type, event) {
+      if (gameState.matchedIds.includes(id)) return;
+      
+      event.preventDefault();
+      gameState.isDragging = true;
+      gameState.dragStartId = id;
+      gameState.dragStartType = type;
+      
+      const card = type === 'term' 
+        ? document.querySelector(`[data-term-id="${id}"]`)
+        : document.querySelector(`[data-def-id="${id}"]`);
+      
+      card.classList.add('ring-4', 'ring-purple-400', 'scale-105');
+      
+      const center = getCardCenter(card);
+      gameState.currentLine = { x: center.x, y: center.y };
+    }
+    
+    // Continue drag
+    function onDrag(event) {
+      if (!gameState.isDragging) return;
+      
+      event.preventDefault();
+      const container = document.getElementById('game-container');
+      const containerRect = container.getBoundingClientRect();
+      
+      let clientX, clientY;
+      if (event.type === 'touchmove') {
+        clientX = event.touches[0].clientX;
+        clientY = event.touches[0].clientY;
+      } else {
+        clientX = event.clientX;
+        clientY = event.clientY;
+      }
+      
+      const x2 = clientX - containerRect.left;
+      const y2 = clientY - containerRect.top;
+      
+      drawTempLine(gameState.currentLine.x, gameState.currentLine.y, x2, y2);
+    }
+    
+    // End drag on card
+    function endDragOnCard(id, type, event) {
+      if (!gameState.isDragging) return;
+      if (gameState.matchedIds.includes(id)) return;
+      
+      event.preventDefault();
+      
+      // Check if we're connecting term to definition or vice versa
+      const isValidConnection = 
+        (gameState.dragStartType === 'term' && type === 'definition') ||
+        (gameState.dragStartType === 'definition' && type === 'term');
+      
+      if (isValidConnection) {
+        const termId = gameState.dragStartType === 'term' ? gameState.dragStartId : id;
+        const defId = gameState.dragStartType === 'definition' ? gameState.dragStartId : id;
+        
+        checkConnection(termId, defId);
+      }
+      
+      endDrag();
+    }
+    
+    // End drag
+    function endDrag() {
+      if (!gameState.isDragging) return;
+      
+      gameState.isDragging = false;
+      removeTempLine();
+      
+      // Remove highlighting
+      document.querySelectorAll('.term-card, .def-card').forEach(card => {
+        card.classList.remove('ring-4', 'ring-purple-400', 'scale-105');
+      });
+      
+      gameState.dragStartId = null;
+      gameState.dragStartType = null;
+      gameState.currentLine = null;
+    }
+    
+    // Check connection
+    function checkConnection(termId, defId) {
+      const termCard = document.querySelector(`[data-term-id="${termId}"]`);
+      const defCard = document.querySelector(`[data-def-id="${defId}"]`);
+      
+      if (termId === defId) {
+        // Correct match!
+        gameState.matchedIds.push(termId);
+        gameState.matchedPairs++;
+        gameState.streak++;
+        gameState.score += 100 + (gameState.streak * 10);
+        
+        // Draw permanent connection
+        drawConnection(termId, defId, '#10b981');
+        const svg = document.getElementById('connection-svg');
+        const line = svg.querySelector(`line[data-connection="${termId}-${defId}"]`);
+        if (line) {
+          line.setAttribute('data-matched', 'true');
+        }
+        
+        termCard.classList.add('card-matched');
+        defCard.classList.add('card-matched');
+        
+        miniCelebration(termCard);
+        miniCelebration(defCard);
+        
+        setTimeout(() => {
+          renderCards();
+          
+          if (gameState.matchedPairs === 6) {
+            showCompletionModal();
+          }
+        }, 600);
+        
+      } else {
+        // Wrong match
+        gameState.streak = 0;
+        
+        termCard.classList.add('card-wrong', 'ring-4', 'ring-red-500');
+        defCard.classList.add('card-wrong', 'ring-4', 'ring-red-500');
+        
+        setTimeout(() => {
+          termCard.classList.remove('card-wrong', 'ring-4', 'ring-red-500');
+          defCard.classList.remove('card-wrong', 'ring-4', 'ring-red-500');
+        }, 500);
+      }
+      
+      updateUI();
+    }
+
+    // Update UI elements
+    function updateUI() {
+      document.getElementById('score').textContent = gameState.score;
+      document.getElementById('progress').textContent = `${gameState.matchedPairs}/6`;
+      document.getElementById('streak').textContent = gameState.streak;
+      document.getElementById('hints-remaining').textContent = gameState.hintsRemaining;
+      
+      const hintBtn = document.getElementById('hint-btn');
+      if (gameState.hintsRemaining <= 0) {
+        hintBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        hintBtn.disabled = true;
+      } else {
+        hintBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        hintBtn.disabled = false;
+      }
+    }
+
+    // Render cards
+    function renderCards() {
+      const termsColumn = document.getElementById('terms-column');
+      const defsColumn = document.getElementById('definitions-column');
+      
+      termsColumn.innerHTML = '';
+      defsColumn.innerHTML = '';
+      
+      gameState.shuffledTerms.forEach((item, index) => {
+        const isMatched = gameState.matchedIds.includes(item.id);
+        const card = document.createElement('div');
+        card.className = `term-card p-3 md:p-4 rounded-xl transform transition-all duration-300 float-in ${isMatched ? 'bg-emerald-500 cursor-default' : 'bg-white hover:shadow-xl cursor-grab active:cursor-grabbing'}`;
+        card.style.animationDelay = `${index * 0.1}s`;
+        card.setAttribute('data-term-id', item.id);
+        
+        if (isMatched) {
+          card.innerHTML = `
+            <div class="flex items-center gap-2">
+              <span class="text-xl md:text-2xl">✅</span>
+              <span class="font-bold text-white text-sm md:text-lg">${item.term}</span>
+            </div>
+          `;
+        } else {
+          card.innerHTML = `
+            <div class="flex items-center gap-2">
+              <span class="text-xl md:text-2xl">⛰️</span>
+              <span class="font-bold text-gray-800 text-sm md:text-lg">${item.term}</span>
+            </div>
+          `;
+          
+          // Mouse events
+          card.addEventListener('mousedown', (e) => startDrag(item.id, 'term', e));
+          card.addEventListener('mouseup', (e) => endDragOnCard(item.id, 'term', e));
+          card.addEventListener('mouseenter', (e) => {
+            if (gameState.isDragging && gameState.dragStartType === 'definition') {
+              card.classList.add('ring-2', 'ring-green-400');
+            }
+          });
+          card.addEventListener('mouseleave', (e) => {
+            card.classList.remove('ring-2', 'ring-green-400');
+          });
+          
+          // Touch events
+          card.addEventListener('touchstart', (e) => startDrag(item.id, 'term', e));
+          card.addEventListener('touchend', (e) => {
+            const touch = e.changedTouches[0];
+            const element = document.elementFromPoint(touch.clientX, touch.clientY);
+            if (element) {
+              const defCard = element.closest('[data-def-id]');
+              if (defCard) {
+                const defId = parseInt(defCard.getAttribute('data-def-id'));
+                endDragOnCard(defId, 'definition', e);
+                return;
+              }
+            }
+            endDrag();
+          });
+        }
+        
+        termsColumn.appendChild(card);
+      });
+      
+      gameState.shuffledDefinitions.forEach((item, index) => {
+        const isMatched = gameState.matchedIds.includes(item.id);
+        const card = document.createElement('div');
+        card.className = `def-card p-3 md:p-4 rounded-xl transform transition-all duration-300 float-in ${isMatched ? 'bg-emerald-500 cursor-default' : 'bg-white/90 hover:shadow-xl cursor-grab active:cursor-grabbing'}`;
+        card.style.animationDelay = `${index * 0.1 + 0.3}s`;
+        card.setAttribute('data-def-id', item.id);
+        
+        if (isMatched) {
+          card.innerHTML = `
+            <div class="flex items-center gap-2">
+              <span class="text-xl md:text-2xl">✅</span>
+              <span class="text-white text-xs md:text-sm">${item.definition}</span>
+            </div>
+          `;
+        } else {
+          card.innerHTML = `
+            <span class="text-gray-700 text-xs md:text-sm">${item.definition}</span>
+          `;
+          
+          // Mouse events
+          card.addEventListener('mousedown', (e) => startDrag(item.id, 'definition', e));
+          card.addEventListener('mouseup', (e) => endDragOnCard(item.id, 'definition', e));
+          card.addEventListener('mouseenter', (e) => {
+            if (gameState.isDragging && gameState.dragStartType === 'term') {
+              card.classList.add('ring-2', 'ring-green-400');
+            }
+          });
+          card.addEventListener('mouseleave', (e) => {
+            card.classList.remove('ring-2', 'ring-green-400');
+          });
+          
+          // Touch events
+          card.addEventListener('touchstart', (e) => startDrag(item.id, 'definition', e));
+          card.addEventListener('touchend', (e) => {
+            const touch = e.changedTouches[0];
+            const element = document.elementFromPoint(touch.clientX, touch.clientY);
+            if (element) {
+              const termCard = element.closest('[data-term-id]');
+              if (termCard) {
+                const termId = parseInt(termCard.getAttribute('data-term-id'));
+                endDragOnCard(termId, 'term', e);
+                return;
+              }
+            }
+            endDrag();
+          });
+        }
+        
+        defsColumn.appendChild(card);
+      });
+    }
+
+
+
+    // Show hint
+    function showHint() {
+      if (gameState.hintsRemaining <= 0) return;
+      
+      const unmatched = vocabularyData.filter(item => !gameState.matchedIds.includes(item.id));
+      if (unmatched.length === 0) return;
+      
+      const randomItem = unmatched[Math.floor(Math.random() * unmatched.length)];
+      
+      gameState.hintsRemaining--;
+      updateUI();
+      
+      // Show hint text
+      const hintMessage = document.getElementById('hint-message');
+      const hintText = document.getElementById('hint-text');
+      hintText.textContent = `💡 「${randomItem.term}」的提示：${randomItem.hint}`;
+      hintMessage.classList.remove('hidden');
+      
+      // Highlight the term
+      const termCard = document.querySelector(`[data-term-id="${randomItem.id}"]`);
+      if (termCard && !gameState.matchedIds.includes(randomItem.id)) {
+        termCard.classList.add('card-hint');
+        setTimeout(() => {
+          termCard.classList.remove('card-hint');
+        }, 3000);
+      }
+    }
+
+    // Hide hint
+    function hideHint() {
+      document.getElementById('hint-message').classList.add('hidden');
+      document.querySelectorAll('.card-hint').forEach(card => {
+        card.classList.remove('card-hint');
+      });
+    }
+
+    // Show completion modal
+    function showCompletionModal() {
+      createConfetti();
+      document.getElementById('final-score').textContent = gameState.score;
+      document.getElementById('completion-modal').classList.remove('hidden');
+    }
+
+    // Element SDK Integration
+    async function onConfigChange(config) {
+      const font = config.font_family || defaultConfig.font_family;
+      document.body.style.fontFamily = `${font}, sans-serif`;
+      
+      document.getElementById('game-title').textContent = config.game_title || defaultConfig.game_title;
+      document.getElementById('hint-btn-text').textContent = config.hint_button_text || defaultConfig.hint_button_text;
+      document.getElementById('restart-btn-text').textContent = config.restart_button_text || defaultConfig.restart_button_text;
+      
+      // Apply colors
+      const bgColor = config.background_color || defaultConfig.background_color;
+      const cardColor = config.card_color || defaultConfig.card_color;
+      const textColor = config.text_color || defaultConfig.text_color;
+      const accentColor = config.accent_color || defaultConfig.accent_color;
+      const successColor = config.success_color || defaultConfig.success_color;
+      
+      document.getElementById('app').style.background = `linear-gradient(135deg, ${bgColor} 0%, ${adjustColor(bgColor, 20)} 50%, ${adjustColor(bgColor, 40)} 100%)`;
+      
+      document.querySelectorAll('.term-card:not(.bg-emerald-500), .def-card:not(.bg-emerald-500)').forEach(card => {
+        card.style.backgroundColor = cardColor;
+        card.style.color = textColor;
+      });
+    }
+    
+    function adjustColor(hex, percent) {
+      const num = parseInt(hex.replace('#', ''), 16);
+      const amt = Math.round(2.55 * percent);
+      const R = Math.min(255, (num >> 16) + amt);
+      const G = Math.min(255, ((num >> 8) & 0x00FF) + amt);
+      const B = Math.min(255, (num & 0x0000FF) + amt);
+      return `#${(1 << 24 | R << 16 | G << 8 | B).toString(16).slice(1)}`;
+    }
+
+    function mapToCapabilities(config) {
+      return {
+        recolorables: [
+          {
+            get: () => config.background_color || defaultConfig.background_color,
+            set: (value) => { config.background_color = value; window.elementSdk.setConfig({ background_color: value }); }
+          },
+          {
+            get: () => config.card_color || defaultConfig.card_color,
+            set: (value) => { config.card_color = value; window.elementSdk.setConfig({ card_color: value }); }
+          },
+          {
+            get: () => config.text_color || defaultConfig.text_color,
+            set: (value) => { config.text_color = value; window.elementSdk.setConfig({ text_color: value }); }
+          },
+          {
+            get: () => config.accent_color || defaultConfig.accent_color,
+            set: (value) => { config.accent_color = value; window.elementSdk.setConfig({ accent_color: value }); }
+          },
+          {
+            get: () => config.success_color || defaultConfig.success_color,
+            set: (value) => { config.success_color = value; window.elementSdk.setConfig({ success_color: value }); }
+          }
+        ],
+        borderables: [],
+        fontEditable: {
+          get: () => config.font_family || defaultConfig.font_family,
+          set: (value) => { config.font_family = value; window.elementSdk.setConfig({ font_family: value }); }
+        },
+        fontSizeable: undefined
+      };
+    }
+
+    function mapToEditPanelValues(config) {
+      return new Map([
+        ["game_title", config.game_title || defaultConfig.game_title],
+        ["hint_button_text", config.hint_button_text || defaultConfig.hint_button_text],
+        ["restart_button_text", config.restart_button_text || defaultConfig.restart_button_text]
+      ]);
+    }
+
+    // Initialize SDK
+    if (window.elementSdk) {
+      window.elementSdk.init({
+        defaultConfig,
+        onConfigChange,
+        mapToCapabilities,
+        mapToEditPanelValues
+      });
+    }
+
+    // Event Listeners
+    document.getElementById('hint-btn').addEventListener('click', showHint);
+    document.getElementById('restart-btn').addEventListener('click', initGame);
+    document.getElementById('play-again-btn').addEventListener('click', () => {
+      document.getElementById('completion-modal').classList.add('hidden');
+      initGame();
+    });
+    
+    // Global drag listeners
+    document.addEventListener('mousemove', onDrag);
+    document.addEventListener('mouseup', endDrag);
+    document.addEventListener('touchmove', onDrag, { passive: false });
+    document.addEventListener('touchend', endDrag);
+
+    // Start game
+    initGame();
+  </script>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9bea066876b94a88',t:'MTc2ODUyODg4OC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
